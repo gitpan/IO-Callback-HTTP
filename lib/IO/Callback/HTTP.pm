@@ -8,9 +8,10 @@ use utf8;
 
 BEGIN {
 	$IO::Callback::HTTP::AUTHORITY = 'cpan:TOBYINK';
-	$IO::Callback::HTTP::VERSION   = '0.001';
+	$IO::Callback::HTTP::VERSION   = '0.002';
 }
 
+use Carp                     qw();
 use Encode                   qw( encode_utf8 );
 use Errno                    qw( EIO );
 use HTTP::Request::Common    qw( GET PUT );
@@ -21,10 +22,14 @@ use URI                      qw();
 use namespace::clean;
 use base 'IO::Callback';
 
-our $USER_AGENT = LWP::UserAgent->new(
-	agent => sprintf('%s/%s ', __PACKAGE__, __PACKAGE__->VERSION),
-);
 our $_LAST_CODE;
+
+sub USER_AGENT ()
+{
+	our $USER_AGENT ||= LWP::UserAgent::->new(
+		agent => sprintf('%s/%s ', __PACKAGE__, __PACKAGE__->VERSION),
+	);
+}
 
 sub open
 {
@@ -32,7 +37,7 @@ sub open
 	
 	unless (ref $code eq 'CODE')
 	{
-		$_LAST_CODE = 
+		$_LAST_CODE =
 		$code = ($mode eq '<')
 			? $self->_mk_reader($code, @args)
 			: $self->_mk_writer($code, @args)
@@ -41,20 +46,42 @@ sub open
 	$self->SUPER::open($mode, $code);
 }
 
+
+sub _process_arg
+{
+	my ($self, $arg) = @_;
+	
+	if (defined $arg->{failure} and not ref $arg->{failure})
+	{
+		my $carpage = Carp::->can($arg->{failure})
+			or Carp::croak("Unknown failure mode: '$arg->{failure}'");
+		$arg->{failure} = sub
+		{
+			my $res = shift;
+			$carpage->(sprintf(
+				'HTTP %s request for <%s> failed: %s',
+				$res->request->method,
+				$res->request->uri,
+				$res->status_line,
+			));
+		}
+	}
+}
+
 sub _mk_reader
 {
 	my ($self, $code, %args) = @_;
+	$self->_process_arg(\%args);
 	
 	if ((not ref $code)
-	or  (blessed $code and $code->isa('URI'))
-	   )
+	or  (blessed $code and $code->isa('URI')))
 	{
 		$code = GET($code);
 	}
 	
 	if (blessed $code and $code->isa('HTTP::Request'))
 	{
-		my $ua    = $args{agent} || $USER_AGENT;
+		my $ua    = $args{agent} || USER_AGENT;
 		my $bytes = exists $args{bytes} ? $args{bytes} : true;
 		my $req   = $code;
 		my $done  = false;
@@ -71,8 +98,8 @@ sub _mk_reader
 				return $res->decoded_content;
 			}
 			
-			$args{failure}->($res) if $args{failure};
 			$! = EIO;
+			$args{failure}->($res) if $args{failure};
 			return IO::Callback::Error;
 		}
 	}
@@ -83,17 +110,17 @@ sub _mk_reader
 sub _mk_writer
 {
 	my ($self, $code, %args) = @_;
+	$self->_process_arg(\%args);
 	
 	if ((not ref $code)
-	or  (blessed $code and $code->isa('URI'))
-	   )
+	or  (blessed $code and $code->isa('URI')))
 	{
 		$code = PUT($code, Content => '');
 	}
 	
 	if (blessed $code and $code->isa('HTTP::Request'))
 	{
-		my $ua    = $args{agent} || $USER_AGENT;
+		my $ua    = $args{agent} || USER_AGENT;
 		my $bytes = exists $args{bytes} ? $args{bytes} : true;
 		my $req   = $code;
 		my $done  = false;
@@ -117,8 +144,8 @@ sub _mk_writer
 				return;
 			}
 			
-			$args{failure}->($res) if $args{failure};
 			$! = EIO;
+			$args{failure}->($res) if $args{failure};
 			return IO::Callback::Error;
 		}
 	}
@@ -217,6 +244,9 @@ Set this to a coderef to trigger when the HTTP request fails (i.e.
 times out or non-2XX HTTP response code). It is passed a single
 parameter, which is the L<HTTP::Response> object. 
 
+As a shortcut, the strings 'croak', 'confess', 'carp' and 'cluck' are
+also accepted, with the same meanings as defined in L<Carp>.
+
 Either way, IO::Callback::HTTP should do the correct thing, setting
 C<< $! >> and so on.
 
@@ -237,7 +267,15 @@ you may be interested in the result of a POST or PUT request.
 
 =item open
 
+=item USER_AGENT
+
 =end private
+
+=head1 CAVEATS
+
+Most of the test suite is skipped on MSWin32 because L<Test::HTTP::Server>
+does not currently support that platform. IO::Callback::HTTP is I<believed>
+to function correctly on Windows, but it's had no meaningful testing.
 
 =head1 BUGS
 

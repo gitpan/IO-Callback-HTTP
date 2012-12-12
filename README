@@ -72,6 +72,9 @@ DESCRIPTION
         times out or non-2XX HTTP response code). It is passed a single
         parameter, which is the HTTP::Response object.
 
+        As a shortcut, the strings 'croak', 'confess', 'carp' and 'cluck'
+        are also accepted, with the same meanings as defined in Carp.
+
         Either way, IO::Callback::HTTP should do the correct thing, setting
         $! and so on.
 
@@ -85,6 +88,12 @@ DESCRIPTION
         indicates that the request was successful. In write mode, it's more
         interesting as you may be interested in the result of a POST or PUT
         request.
+
+CAVEATS
+    Most of the test suite is skipped on MSWin32 because Test::HTTP::Server
+    does not currently support that platform. IO::Callback::HTTP is
+    *believed* to function correctly on Windows, but it's had no meaningful
+    testing.
 
 BUGS
     Please report any bugs to
